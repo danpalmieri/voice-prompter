@@ -6,19 +6,21 @@ No more scrolling text or foot pedals. Just speak naturally and the next phrase 
 
 ## Install
 
+**One-liner:**
+
 ```bash
-# macOS (requires portaudio)
+curl -sL https://raw.githubusercontent.com/danpalmieri/voice-prompter/master/install.sh | bash
+```
+
+**Or manually:**
+
+```bash
+# macOS
 brew install portaudio
-pip install voice-prompter
+pip install git+https://github.com/danpalmieri/voice-prompter.git
 
 # Linux
 sudo apt install portaudio19-dev
-pip install voice-prompter
-```
-
-Or install from GitHub:
-
-```bash
 pip install git+https://github.com/danpalmieri/voice-prompter.git
 ```
 
