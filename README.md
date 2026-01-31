@@ -7,28 +7,33 @@ No more scrolling text or foot pedals. Just speak naturally and the next phrase 
 ## Install
 
 ```bash
-curl -sL https://raw.githubusercontent.com/danpalmieri/voice-prompter/master/install.sh | bash
-```
-
-Or manually:
-
-```bash
-# macOS
+# macOS (requires portaudio)
 brew install portaudio
-pip3 install SpeechRecognition pyaudio
+pip install voice-prompter
 
 # Linux
 sudo apt install portaudio19-dev
-pip3 install SpeechRecognition pyaudio
+pip install voice-prompter
+```
 
-# Download
-curl -o prompter.py https://raw.githubusercontent.com/danpalmieri/voice-prompter/master/prompter.py
+Or install from GitHub:
+
+```bash
+pip install git+https://github.com/danpalmieri/voice-prompter.git
 ```
 
 ## Usage
 
 ```bash
-python3 prompter.py your_script.txt
+prompter script.txt
+```
+
+Options:
+
+```bash
+prompter script.txt              # Voice-activated (default)
+prompter script.txt --manual     # Manual mode (keyboard only)
+prompter script.txt --pause 1.5  # Adjust pause detection (seconds)
 ```
 
 **Tip:** Run terminal in fullscreen and increase font size (Cmd + on Mac).
@@ -49,7 +54,7 @@ python3 prompter.py your_script.txt
 3. Listens to your microphone
 4. Detects when you stop speaking → shows next phrase
 
-Perfect for recording videos, podcasts, or presentations without losing your place.
+Perfect for recording videos, podcasts, or presentations.
 
 ## License
 
