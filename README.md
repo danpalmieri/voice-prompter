@@ -6,22 +6,18 @@ No more scrolling text or foot pedals. Just speak naturally and the next phrase 
 
 ## Install
 
-**One-liner:**
+**macOS:**
 
 ```bash
-curl -sL https://raw.githubusercontent.com/danpalmieri/voice-prompter/master/install.sh | bash
+brew install portaudio pipx
+pipx install git+https://github.com/danpalmieri/voice-prompter.git
 ```
 
-**Or manually:**
+**Linux:**
 
 ```bash
-# macOS
-brew install portaudio
-pip install git+https://github.com/danpalmieri/voice-prompter.git
-
-# Linux
-sudo apt install portaudio19-dev
-pip install git+https://github.com/danpalmieri/voice-prompter.git
+sudo apt install portaudio19-dev pipx
+pipx install git+https://github.com/danpalmieri/voice-prompter.git
 ```
 
 ## Usage

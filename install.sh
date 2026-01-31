@@ -7,24 +7,22 @@ echo "🎤 Installing Voice Prompter..."
 
 # macOS
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    if ! brew list portaudio &>/dev/null; then
-        echo "Installing portaudio..."
-        brew install portaudio
-    fi
+    brew install portaudio pipx 2>/dev/null || true
+    pipx ensurepath
 fi
 
 # Linux
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    if ! dpkg -l | grep -q portaudio19-dev 2>/dev/null; then
-        echo "Installing portaudio..."
-        sudo apt-get install -y portaudio19-dev
-    fi
+    sudo apt-get install -y portaudio19-dev pipx
+    pipx ensurepath
 fi
 
 # Install CLI
-pip3 install -q git+https://github.com/danpalmieri/voice-prompter.git
+pipx install git+https://github.com/danpalmieri/voice-prompter.git
 
 echo ""
 echo "✅ Installed!"
 echo ""
 echo "Usage: prompter script.txt"
+echo ""
+echo "You may need to restart your terminal or run: source ~/.zshrc"
