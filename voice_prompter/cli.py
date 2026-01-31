@@ -1,36 +1,23 @@
 #!/usr/bin/env python3
 """
 Voice Prompter - Horizontal scrolling teleprompter.
-
-Text scrolls like a marquee/ticker across one line.
-Arrow keys control speed and direction.
 """
 
 import sys
 import os
-import re
-import argparse
 import time
-import threading
-
-
-def clear():
-    os.system('clear' if os.name != 'nt' else 'cls')
 
 
 def load_text(filepath):
-    """Load and join all text into one continuous string."""
     with open(filepath, 'r', encoding='utf-8') as f:
         text = f.read()
-    # Join all lines, normalize whitespace
-    text = ' '.join(text.split())
-    return text
+    return ' '.join(text.split())
 
 
-def display_marquee(text, offset, width, speed_indicator=""):
-    """Display text as horizontal marquee."""
-    # Move cursor to home position without full clear (less flicker)
-    sys.stdout.write('\033[H')
+def run_marquee(text):
+    import tty
+    import termios
+    import select
     
     try:
         w = os.get_terminal_size().columns
@@ -38,65 +25,19 @@ def display_marquee(text, offset, width, speed_indicator=""):
     except OSError:
         w, h = 80, 24
 
-    # Pad text with spaces for smooth scrolling
+    # Pad text
     padded = ' ' * w + text + ' ' * w
     
-    # Calculate visible portion
-    start = int(offset) % len(padded)
-    visible = padded[start:start + w]
-    if len(visible) < w:
-        visible += padded[:w - len(visible)]
-
-    # Clear screen and position
-    clear()
-    
-    # Top padding to center vertically
-    top_pad = (h - 4) // 2
-    print('\n' * top_pad)
-    
-    # The marquee line - BIG and BOLD
-    print(f'\033[1;97m{visible}\033[0m')
-    
-    # Bottom info
-    print('\n' * (h - top_pad - 4))
-    
-    # Progress bar
-    progress = offset / (len(text) + w)
-    bar_width = w - 20
-    filled = int(bar_width * min(progress, 1.0))
-    bar = '█' * filled + '░' * (bar_width - filled)
-    
-    # Status line
-    status = f'[{bar}] {speed_indicator}'
-    print(f'\033[90m{status:^{w}}\033[0m')
-    print(f'\033[90m{"→/← speed | SPACE=pause | Q=quit":^{w}}\033[0m')
-    
-    sys.stdout.flush()
-
-
-def run_marquee(text):
-    """Run the marquee prompter."""
-    import tty
-    import termios
-    import select
-    
-    try:
-        w = os.get_terminal_size().columns
-    except OSError:
-        w = 80
-
     offset = 0.0
-    base_speed = 15  # chars per second
-    speed_multiplier = 0.0  # 0 = paused
-    direction = 1  # 1 = forward, -1 = backward
-    
-    last_key_time = 0
-    tap_count = 0
+    speed = 0.0  # chars per second (0 = paused)
+    base_speed = 20
     
     old_settings = termios.tcgetattr(sys.stdin)
     
-    # Hide cursor
-    sys.stdout.write('\033[?25l')
+    # Setup terminal
+    sys.stdout.write('\033[?25l')  # Hide cursor
+    sys.stdout.write('\033[2J')    # Clear screen
+    sys.stdout.flush()
     
     try:
         tty.setcbreak(sys.stdin.fileno())
@@ -104,140 +45,98 @@ def run_marquee(text):
         last_time = time.time()
         
         while True:
-            current_time = time.time()
-            dt = current_time - last_time
-            last_time = current_time
+            now = time.time()
+            dt = now - last_time
+            last_time = now
             
             # Update position
-            offset += base_speed * speed_multiplier * direction * dt
+            offset += speed * dt
             
-            # Clamp offset
+            # Clamp
             max_offset = len(text) + w
             if offset < 0:
                 offset = 0
-                speed_multiplier = 0
+                speed = 0
             if offset > max_offset:
                 offset = max_offset
-                speed_multiplier = 0
+                speed = 0
             
-            # Speed indicator
-            if speed_multiplier == 0:
-                indicator = "⏸ PAUSED"
+            # Get visible text
+            start = int(offset) % len(padded)
+            visible = padded[start:start + w]
+            if len(visible) < w:
+                visible += padded[:w - len(visible)]
+            
+            # Draw at TOP (line 2)
+            sys.stdout.write('\033[2;1H')  # Move to row 2, col 1
+            sys.stdout.write(f'\033[1;97m{visible}\033[0m')
+            
+            # Status at bottom
+            sys.stdout.write(f'\033[{h};1H')
+            if speed == 0:
+                status = "⏸ PAUSED  |  →=play  ←=back  Q=quit"
+            elif speed > 0:
+                status = f"→ {speed:.0f} c/s  |  →=faster  ←=slower  SPACE=pause"
             else:
-                arrow = "→→" if direction > 0 else "←←"
-                if speed_multiplier == 1.0:
-                    indicator = f"{arrow} 1x"
-                elif speed_multiplier == 1.5:
-                    indicator = f"{arrow} 1.5x"
-                elif speed_multiplier == 2.0:
-                    indicator = f"{arrow} 2x"
-                else:
-                    indicator = f"{arrow} {speed_multiplier:.1f}x"
+                status = f"← {-speed:.0f} c/s  |  →=slower  ←=faster  SPACE=pause"
+            sys.stdout.write(f'\033[90m{status:<{w}}\033[0m')
             
-            display_marquee(text, offset, w, indicator)
+            sys.stdout.flush()
             
-            # Check for input (non-blocking)
-            if select.select([sys.stdin], [], [], 0.03)[0]:
+            # Input check
+            if select.select([sys.stdin], [], [], 0.016)[0]:
                 key = sys.stdin.read(1)
                 
                 if key == 'q':
                     break
                 elif key == ' ':
-                    # Toggle pause
-                    if speed_multiplier == 0:
-                        speed_multiplier = 1.0
-                        direction = 1
-                    else:
-                        speed_multiplier = 0
-                elif key == '\x1b':  # Escape sequence (arrow keys)
-                    # Read the rest of the escape sequence
-                    if select.select([sys.stdin], [], [], 0.01)[0]:
-                        seq = sys.stdin.read(2)
-                        
-                        now = time.time()
-                        
-                        if seq == '[C':  # Right arrow
-                            direction = 1
-                            
-                            # Check for double/triple tap
-                            if now - last_key_time < 0.3:
-                                tap_count += 1
-                            else:
-                                tap_count = 1
-                            last_key_time = now
-                            
-                            if tap_count >= 3:
-                                speed_multiplier = 2.0
-                            elif tap_count == 2:
-                                speed_multiplier = 1.5
-                            else:
-                                speed_multiplier = 1.0
-                                
-                        elif seq == '[D':  # Left arrow
-                            direction = -1
-                            
-                            # Check for double/triple tap
-                            if now - last_key_time < 0.3:
-                                tap_count += 1
-                            else:
-                                tap_count = 1
-                            last_key_time = now
-                            
-                            if tap_count >= 3:
-                                speed_multiplier = 2.0
-                            elif tap_count == 2:
-                                speed_multiplier = 1.5
-                            else:
-                                speed_multiplier = 1.0
-            
-            time.sleep(0.016)  # ~60fps
+                    speed = 0 if speed != 0 else base_speed
+                elif key == '\x1b':
+                    # Arrow key
+                    sys.stdin.read(1)  # skip [
+                    arrow = sys.stdin.read(1)
+                    
+                    if arrow == 'C':  # Right
+                        if speed <= 0:
+                            speed = base_speed
+                        else:
+                            speed = min(speed + 10, 100)
+                    elif arrow == 'D':  # Left
+                        if speed >= 0:
+                            speed = -base_speed
+                        else:
+                            speed = max(speed - 10, -100)
     
     finally:
-        # Show cursor
-        sys.stdout.write('\033[?25h')
+        sys.stdout.write('\033[?25h')  # Show cursor
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-        clear()
+        sys.stdout.write('\033[2J\033[H')  # Clear
         print("Done! 🎬")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Horizontal scrolling teleprompter (marquee style).",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Text scrolls horizontally like a ticker/marquee.
-
-Controls:
-  →          Scroll forward (1x, tap again for 1.5x, again for 2x)
-  ←          Scroll backward (same speed logic)
-  SPACE      Pause/resume
-  Q          Quit
-
-Tip: Increase terminal font size (Cmd +) for bigger text.
-        """
-    )
-    parser.add_argument("script", help="Text file to display")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 0.3.0")
-
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Horizontal scrolling teleprompter")
+    parser.add_argument("script", help="Text file")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 0.3.1")
+    
     args = parser.parse_args()
-
+    
     if not os.path.exists(args.script):
         print(f"Error: {args.script} not found")
         sys.exit(1)
-
-    text = load_text(args.script)
-
-    if not text:
-        print("Error: No text found")
-        sys.exit(1)
-
-    print(f"📜 {len(text)} characters")
-    print("💡 Cmd + to increase font")
-    print("Press → to start scrolling...")
-    print()
     
-    time.sleep(1)
-
+    text = load_text(args.script)
+    
+    if not text:
+        print("Error: No text")
+        sys.exit(1)
+    
+    print(f"📜 {len(text)} chars | Cmd + for bigger font")
+    print("→ to start")
+    time.sleep(0.5)
+    
     run_marquee(text)
 
 
