@@ -22,18 +22,16 @@ def clear():
 
 def split_paragraphs(text):
     """Split text by blank lines (paragraphs)."""
-    # Split on one or more blank lines
     paragraphs = re.split(r'\n\s*\n', text)
-    # Clean up and filter empty
     result = []
     for p in paragraphs:
-        p = ' '.join(p.split())  # Normalize whitespace
+        p = ' '.join(p.split())
         if p.strip():
             result.append(p.strip())
     return result
 
 
-def display(phrase, current, total, status=""):
+def display(phrase, current, total, voice_active=False):
     """Display phrase BIG at TOP of terminal."""
     clear()
     try:
@@ -50,9 +48,9 @@ def display(phrase, current, total, status=""):
     print(f"\033[90m{'─' * w}\033[0m")
     print()
 
-    # Word wrap - shorter lines for bigger text feel
+    # Word wrap
     words = phrase.split()
-    max_width = min(w - 8, 50)  # Shorter = feels bigger
+    max_width = min(w - 8, 50)
     
     lines = []
     line = ""
@@ -65,21 +63,24 @@ def display(phrase, current, total, status=""):
     if line:
         lines.append(line)
 
-    # Display at TOP - BIG and BOLD
+    # Display BIG and BOLD
     for l in lines:
-        # Extra bold with bright white
         print(f"\033[1;97m{l:^{w}}\033[0m")
-        print()  # Extra spacing between lines
+        print()
 
-    # Footer at bottom
-    footer_pos = h - 3
+    # Footer
+    footer_pos = h - 4
     current_pos = 5 + (len(lines) * 2)
     if footer_pos > current_pos:
         print("\n" * (footer_pos - current_pos))
     
-    if status:
-        print(f"\033[93m{status:^{w}}\033[0m")
-    print(f"\033[90m{'SPACE=next | B=back | Q=quit':^{w}}\033[0m")
+    # Status line
+    if voice_active:
+        status = "🎤 Listening..."
+    else:
+        status = "🔇 Voice OFF"
+    print(f"\033[93m{status:^{w}}\033[0m")
+    print(f"\033[90m{'SPACE=next | B=back | V=voice | Q=quit':^{w}}\033[0m")
 
 
 def keyboard_listener(cmd_queue, stop_event):
@@ -99,13 +100,22 @@ def keyboard_listener(cmd_queue, stop_event):
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 
-def voice_listener(cmd_queue, stop_event, recognizer, mic, min_words):
+def voice_listener(cmd_queue, stop_event, voice_enabled, recognizer, mic, min_words):
     """Listen for voice in a separate thread."""
     while not stop_event.is_set():
+        # Check if voice is enabled
+        if not voice_enabled.is_set():
+            time.sleep(0.1)
+            continue
+            
         try:
             with mic as source:
                 try:
                     audio = recognizer.listen(source, timeout=2, phrase_time_limit=15)
+                    
+                    # Double-check voice is still enabled
+                    if not voice_enabled.is_set():
+                        continue
                     
                     try:
                         spoken = recognizer.recognize_google(audio, language="pt-BR")
@@ -124,47 +134,53 @@ def voice_listener(cmd_queue, stop_event, recognizer, mic, min_words):
             time.sleep(0.5)
 
 
-def run_prompter(phrases, use_voice=True, min_words=5):
+def run_prompter(phrases, start_with_voice=True, min_words=5):
     """Run the prompter loop."""
     total = len(phrases)
     current = 0
 
     cmd_queue = queue.Queue()
     stop_event = threading.Event()
+    voice_enabled = threading.Event()
+    
+    if start_with_voice:
+        voice_enabled.set()
 
     # Start keyboard listener
     kb_thread = threading.Thread(target=keyboard_listener, args=(cmd_queue, stop_event), daemon=True)
     kb_thread.start()
 
     # Setup voice
-    if use_voice:
-        recognizer = sr.Recognizer()
-        recognizer.dynamic_energy_threshold = True
-        recognizer.energy_threshold = 300
-        recognizer.pause_threshold = 1.0
+    mic_available = False
+    recognizer = sr.Recognizer()
+    recognizer.dynamic_energy_threshold = True
+    recognizer.energy_threshold = 300
+    recognizer.pause_threshold = 1.0
+    
+    try:
+        mic = sr.Microphone()
+        print("🎤 Calibrating...")
+        with mic as source:
+            recognizer.adjust_for_ambient_noise(source, duration=1.5)
+        print("✅ Ready!")
+        time.sleep(0.5)
         
-        try:
-            mic = sr.Microphone()
-            print("🎤 Calibrating...")
-            with mic as source:
-                recognizer.adjust_for_ambient_noise(source, duration=1.5)
-            print("✅ Ready!")
-            time.sleep(0.5)
-            
-            voice_thread = threading.Thread(
-                target=voice_listener,
-                args=(cmd_queue, stop_event, recognizer, mic, min_words),
-                daemon=True
-            )
-            voice_thread.start()
-        except Exception as e:
-            print(f"❌ Microphone: {e}")
-            use_voice = False
-            time.sleep(1)
+        voice_thread = threading.Thread(
+            target=voice_listener,
+            args=(cmd_queue, stop_event, voice_enabled, recognizer, mic, min_words),
+            daemon=True
+        )
+        voice_thread.start()
+        mic_available = True
+    except Exception as e:
+        print(f"❌ Microphone: {e}")
+        print("Manual mode only.")
+        voice_enabled.clear()
+        time.sleep(1)
 
     try:
         while current < total:
-            display(phrases[current], current + 1, total, "🎤 Listening..." if use_voice else "")
+            display(phrases[current], current + 1, total, voice_enabled.is_set())
 
             while True:
                 try:
@@ -179,6 +195,13 @@ def run_prompter(phrases, use_voice=True, min_words=5):
                         elif cmd in '\n\r ':
                             current += 1
                             break
+                        elif cmd == 'v' and mic_available:
+                            # Toggle voice
+                            if voice_enabled.is_set():
+                                voice_enabled.clear()
+                            else:
+                                voice_enabled.set()
+                            break  # Refresh display
                     elif source == 'voice' and cmd == 'next':
                         current += 1
                         break
@@ -204,13 +227,14 @@ Controls:
   🎤 Speak     Advances after paragraph
   Space/Enter  Next (manual)
   B            Previous
+  V            Toggle voice on/off
   Q            Quit
         """
     )
     parser.add_argument("script", help="Text file (separate paragraphs with blank lines)")
-    parser.add_argument("-m", "--manual", action="store_true", help="Manual mode")
+    parser.add_argument("-m", "--manual", action="store_true", help="Start in manual mode (voice off)")
     parser.add_argument("-w", "--words", type=int, default=5, help="Min words to advance (default: 5)")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 0.2.0")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 0.2.2")
 
     args = parser.parse_args()
 
@@ -231,7 +255,7 @@ Controls:
     print("💡 Cmd + to increase font")
     print()
 
-    run_prompter(phrases, use_voice=not args.manual, min_words=args.words)
+    run_prompter(phrases, start_with_voice=not args.manual, min_words=args.words)
 
 
 if __name__ == "__main__":
