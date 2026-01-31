@@ -27,10 +27,11 @@ def run_marquee(text):
 
     # Pad text
     padded = ' ' * w + text + ' ' * w
+    total_len = len(text) + w
     
     offset = 0.0
     speed = 0.0  # chars per second (0 = paused)
-    base_speed = 20
+    base_speed = 8  # slower default
     
     old_settings = termios.tcgetattr(sys.stdin)
     
@@ -53,12 +54,11 @@ def run_marquee(text):
             offset += speed * dt
             
             # Clamp
-            max_offset = len(text) + w
             if offset < 0:
                 offset = 0
                 speed = 0
-            if offset > max_offset:
-                offset = max_offset
+            if offset > total_len:
+                offset = total_len
                 speed = 0
             
             # Get visible text
@@ -67,18 +67,28 @@ def run_marquee(text):
             if len(visible) < w:
                 visible += padded[:w - len(visible)]
             
-            # Draw at TOP (line 2)
-            sys.stdout.write('\033[2;1H')  # Move to row 2, col 1
+            # Draw text at TOP (line 2)
+            sys.stdout.write('\033[2;1H')
             sys.stdout.write(f'\033[1;97m{visible}\033[0m')
+            
+            # Progress bar (line 4)
+            progress = offset / total_len if total_len > 0 else 0
+            bar_w = w - 10
+            filled = int(bar_w * min(progress, 1.0))
+            bar = '█' * filled + '░' * (bar_w - filled)
+            pct = int(progress * 100)
+            
+            sys.stdout.write('\033[4;1H')
+            sys.stdout.write(f'\033[90m{bar} {pct:3d}%\033[0m')
             
             # Status at bottom
             sys.stdout.write(f'\033[{h};1H')
             if speed == 0:
-                status = "⏸ PAUSED  |  →=play  ←=back  Q=quit"
+                status = "⏸ PAUSED  |  → play  ← back  Q quit"
             elif speed > 0:
-                status = f"→ {speed:.0f} c/s  |  →=faster  ←=slower  SPACE=pause"
+                status = f"→ {speed:.0f} c/s  |  → faster  ← slower  SPACE pause"
             else:
-                status = f"← {-speed:.0f} c/s  |  →=slower  ←=faster  SPACE=pause"
+                status = f"← {-speed:.0f} c/s  |  ← faster  → slower  SPACE pause"
             sys.stdout.write(f'\033[90m{status:<{w}}\033[0m')
             
             sys.stdout.flush()
@@ -100,12 +110,12 @@ def run_marquee(text):
                         if speed <= 0:
                             speed = base_speed
                         else:
-                            speed = min(speed + 10, 100)
+                            speed = min(speed + 5, 80)
                     elif arrow == 'D':  # Left
                         if speed >= 0:
                             speed = -base_speed
                         else:
-                            speed = max(speed - 10, -100)
+                            speed = max(speed - 5, -80)
     
     finally:
         sys.stdout.write('\033[?25h')  # Show cursor
@@ -119,7 +129,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Horizontal scrolling teleprompter")
     parser.add_argument("script", help="Text file")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 0.3.1")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 0.3.2")
     
     args = parser.parse_args()
     
