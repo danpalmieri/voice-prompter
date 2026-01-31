@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voice-prompter"
-version = "0.3.3"
+version = "0.3.4"
 description = "Voice-activated teleprompter - shows one phrase at a time, advances when you stop speaking"
 readme = "README.md"
 license = {text = "MIT"}
