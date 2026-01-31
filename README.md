@@ -1,32 +1,56 @@
 # Voice Prompter 🎤
 
-Teleprompter ativado por voz - mostra uma frase de cada vez e avança automaticamente quando você para de falar.
+A voice-activated teleprompter that shows one phrase at a time and automatically advances when you stop speaking.
 
-## Instalação
+No more scrolling text or foot pedals. Just speak naturally and the next phrase appears.
+
+## Install
+
+```bash
+curl -sL https://raw.githubusercontent.com/danpalmieri/voice-prompter/master/install.sh | bash
+```
+
+Or manually:
 
 ```bash
 # macOS
 brew install portaudio
-pip install SpeechRecognition pyaudio
+pip3 install SpeechRecognition pyaudio
 
 # Linux
 sudo apt install portaudio19-dev
-pip install SpeechRecognition pyaudio
+pip3 install SpeechRecognition pyaudio
+
+# Download
+curl -o prompter.py https://raw.githubusercontent.com/danpalmieri/voice-prompter/master/prompter.py
 ```
 
-## Uso
+## Usage
 
 ```bash
-python prompter.py script.txt
+python3 prompter.py your_script.txt
 ```
 
-## Controles
+**Tip:** Run terminal in fullscreen and increase font size (Cmd + on Mac).
 
-- **Falar** → avança quando você para
-- **Enter/Espaço** → próxima frase (manual)
-- **B** → volta uma frase
-- **Q** → sair
+## Controls
 
-## Dica
+| Key | Action |
+|-----|--------|
+| 🎤 Speak | Auto-advance when you pause |
+| Enter / Space | Next phrase (manual) |
+| B | Previous phrase |
+| Q | Quit |
 
-Coloque o terminal em fullscreen e aumente a fonte (Cmd+Plus no Mac).
+## How it works
+
+1. Splits your script into sentences
+2. Displays one phrase at a time (large, centered)
+3. Listens to your microphone
+4. Detects when you stop speaking → shows next phrase
+
+Perfect for recording videos, podcasts, or presentations without losing your place.
+
+## License
+
+MIT

@@ -1,36 +1,37 @@
 #!/bin/bash
-# Voice Prompter - Instalação automática para macOS
+# Voice Prompter - Auto-install for macOS/Linux
 
 set -e
 
-echo "🎤 Instalando Voice Prompter..."
+echo "🎤 Installing Voice Prompter..."
 
-# Instalar portaudio se não existir
-if ! brew list portaudio &>/dev/null; then
-    echo "Instalando portaudio..."
-    brew install portaudio
+# macOS: install portaudio
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    if ! brew list portaudio &>/dev/null; then
+        echo "Installing portaudio..."
+        brew install portaudio
+    fi
 fi
 
-# Instalar dependências Python
+# Linux: install portaudio
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    if ! dpkg -l | grep -q portaudio19-dev; then
+        echo "Installing portaudio..."
+        sudo apt-get install -y portaudio19-dev
+    fi
+fi
+
+# Install Python dependencies
 pip3 install -q SpeechRecognition pyaudio
 
-# Baixar o script
+# Download script
 INSTALL_DIR="$HOME/.local/bin"
 mkdir -p "$INSTALL_DIR"
-curl -sL -o "$INSTALL_DIR/prompter.py" "https://raw.githubusercontent.com/danpalmieri/clawdbot/master/tools/voice-prompter/prompter.py"
+curl -sL -o "$INSTALL_DIR/prompter.py" "https://raw.githubusercontent.com/danpalmieri/voice-prompter/master/prompter.py"
 chmod +x "$INSTALL_DIR/prompter.py"
 
-# Criar alias
-cat >> ~/.zshrc << 'EOF'
-alias prompter='python3 ~/.local/bin/prompter.py'
-EOF
-
 echo ""
-echo "✅ Instalado!"
+echo "✅ Installed!"
 echo ""
-echo "Uso:"
-echo "  source ~/.zshrc"
-echo "  prompter seu_script.txt"
-echo ""
-echo "Ou direto:"
-echo "  python3 ~/.local/bin/prompter.py seu_script.txt"
+echo "Usage:"
+echo "  python3 ~/.local/bin/prompter.py your_script.txt"
