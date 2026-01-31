@@ -2,7 +2,7 @@
 """
 Voice Prompter - Voice-activated teleprompter CLI.
 
-Shows one phrase at a time, advances when it detects you speaking.
+Shows one paragraph at a time, advances when it detects you speaking.
 """
 
 import sys
@@ -20,24 +20,21 @@ def clear():
     os.system('clear' if os.name != 'nt' else 'cls')
 
 
-def split_phrases(text, max_length=100):
-    """Split text into speakable phrases."""
-    phrases = re.split(r'(?<=[.!?])\s+', text)
+def split_paragraphs(text):
+    """Split text by blank lines (paragraphs)."""
+    # Split on one or more blank lines
+    paragraphs = re.split(r'\n\s*\n', text)
+    # Clean up and filter empty
     result = []
-    for p in phrases:
-        p = p.strip()
-        if not p:
-            continue
-        if len(p) > max_length:
-            subphrases = re.split(r',\s*', p)
-            result.extend([sp.strip() for sp in subphrases if sp.strip()])
-        else:
-            result.append(p)
+    for p in paragraphs:
+        p = ' '.join(p.split())  # Normalize whitespace
+        if p.strip():
+            result.append(p.strip())
     return result
 
 
 def display(phrase, current, total, status=""):
-    """Display phrase BIG in terminal."""
+    """Display phrase BIG at TOP of terminal."""
     clear()
     try:
         w = os.get_terminal_size().columns
@@ -45,15 +42,17 @@ def display(phrase, current, total, status=""):
     except OSError:
         w, h = 80, 24
 
-    # Header
-    progress = f"[{current}/{total}]"
-    print(f"\033[90m{progress:^{w}}\033[0m")
+    # BIG progress at top
+    progress = f"[ {current} / {total} ]"
+    print()
+    print(f"\033[1;97m{progress:^{w}}\033[0m")
+    print()
+    print(f"\033[90m{'─' * w}\033[0m")
     print()
 
-    # Word wrap
-    available_height = h - 8
+    # Word wrap - shorter lines for bigger text feel
     words = phrase.split()
-    max_width = min(w - 4, 60)
+    max_width = min(w - 8, 50)  # Shorter = feels bigger
     
     lines = []
     line = ""
@@ -66,23 +65,20 @@ def display(phrase, current, total, status=""):
     if line:
         lines.append(line)
 
-    # Vertical centering
-    text_height = len(lines)
-    padding_top = max(0, (available_height - text_height) // 2)
-    print("\n" * padding_top)
-
-    # Display BIG and BOLD
+    # Display at TOP - BIG and BOLD
     for l in lines:
-        print(f"\033[1m{l:^{w}}\033[0m")
+        # Extra bold with bright white
+        print(f"\033[1;97m{l:^{w}}\033[0m")
+        print()  # Extra spacing between lines
 
-    # Status and footer
-    remaining_lines = h - padding_top - text_height - 6
-    print("\n" * max(0, remaining_lines))
+    # Footer at bottom
+    footer_pos = h - 3
+    current_pos = 5 + (len(lines) * 2)
+    if footer_pos > current_pos:
+        print("\n" * (footer_pos - current_pos))
     
     if status:
         print(f"\033[93m{status:^{w}}\033[0m")
-    else:
-        print()
     print(f"\033[90m{'ESPAÇO=próx | B=volta | Q=sair':^{w}}\033[0m")
 
 
@@ -109,31 +105,26 @@ def voice_listener(cmd_queue, stop_event, recognizer, mic, min_words):
         try:
             with mic as source:
                 try:
-                    # Listen for speech
-                    audio = recognizer.listen(source, timeout=2, phrase_time_limit=12)
+                    audio = recognizer.listen(source, timeout=2, phrase_time_limit=15)
                     
-                    # Try to recognize
                     try:
                         spoken = recognizer.recognize_google(audio, language="pt-BR")
-                        # Count words - filter out short sounds
                         word_count = len(spoken.split())
                         if word_count >= min_words:
                             cmd_queue.put(('voice', 'next'))
                     except sr.UnknownValueError:
-                        # Couldn't understand - probably noise
                         pass
-                    except sr.RequestError as e:
-                        # API error - wait and retry
+                    except sr.RequestError:
                         time.sleep(1)
                         
                 except sr.WaitTimeoutError:
                     continue
                     
-        except Exception as e:
+        except Exception:
             time.sleep(0.5)
 
 
-def run_prompter(phrases, use_voice=True, min_words=3):
+def run_prompter(phrases, use_voice=True, min_words=5):
     """Run the prompter loop."""
     total = len(phrases)
     current = 0
@@ -150,14 +141,14 @@ def run_prompter(phrases, use_voice=True, min_words=3):
         recognizer = sr.Recognizer()
         recognizer.dynamic_energy_threshold = True
         recognizer.energy_threshold = 300
-        recognizer.pause_threshold = 0.8  # Faster response
+        recognizer.pause_threshold = 1.0
         
         try:
             mic = sr.Microphone()
-            print("🎤 Calibrando microfone...")
+            print("🎤 Calibrando...")
             with mic as source:
                 recognizer.adjust_for_ambient_noise(source, duration=1.5)
-            print(f"✅ Pronto! (sensibilidade: {int(recognizer.energy_threshold)})")
+            print("✅ Pronto!")
             time.sleep(0.5)
             
             voice_thread = threading.Thread(
@@ -167,8 +158,7 @@ def run_prompter(phrases, use_voice=True, min_words=3):
             )
             voice_thread.start()
         except Exception as e:
-            print(f"❌ Microfone não disponível: {e}")
-            print("Usando modo manual.")
+            print(f"❌ Microfone: {e}")
             use_voice = False
             time.sleep(1)
 
@@ -176,7 +166,6 @@ def run_prompter(phrases, use_voice=True, min_words=3):
         while current < total:
             display(phrases[current], current + 1, total, "🎤 Ouvindo..." if use_voice else "")
 
-            # Wait for command
             while True:
                 try:
                     source, cmd = cmd_queue.get(timeout=0.1)
@@ -208,35 +197,38 @@ def main():
         description="Voice-activated teleprompter.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+Splits text by blank lines (paragraphs).
+Advances when you finish speaking each paragraph.
+
 Controls:
-  🎤 Speak     Advances after you speak (min 3 words)
-  Space/Enter  Next phrase
-  B            Previous phrase  
+  🎤 Speak     Advances after paragraph
+  Space/Enter  Next (manual)
+  B            Previous
   Q            Quit
         """
     )
-    parser.add_argument("script", help="Text file with your script")
-    parser.add_argument("-m", "--manual", action="store_true", help="Manual mode (no voice)")
-    parser.add_argument("-w", "--words", type=int, default=3, help="Min words to advance (default: 3)")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 0.1.3")
+    parser.add_argument("script", help="Text file (separate paragraphs with blank lines)")
+    parser.add_argument("-m", "--manual", action="store_true", help="Manual mode")
+    parser.add_argument("-w", "--words", type=int, default=5, help="Min words to advance (default: 5)")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 0.2.0")
 
     args = parser.parse_args()
 
     if not os.path.exists(args.script):
-        print(f"Error: File not found: {args.script}")
+        print(f"Error: {args.script} not found")
         sys.exit(1)
 
     with open(args.script, 'r', encoding='utf-8') as f:
         text = f.read()
 
-    phrases = split_phrases(text)
+    phrases = split_paragraphs(text)
 
     if not phrases:
-        print("Error: No text found in file.")
+        print("Error: No text found")
         sys.exit(1)
 
-    print(f"📜 {len(phrases)} frases")
-    print("💡 Aumente a fonte: Cmd + (Mac)")
+    print(f"📜 {len(phrases)} parágrafos")
+    print("💡 Cmd + para aumentar fonte")
     print()
 
     run_prompter(phrases, use_voice=not args.manual, min_words=args.words)
