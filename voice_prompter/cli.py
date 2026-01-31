@@ -79,7 +79,7 @@ def display(phrase, current, total, status=""):
     
     if status:
         print(f"\033[93m{status:^{w}}\033[0m")
-    print(f"\033[90m{'ESPAÇO=próx | B=volta | Q=sair':^{w}}\033[0m")
+    print(f"\033[90m{'SPACE=next | B=back | Q=quit':^{w}}\033[0m")
 
 
 def keyboard_listener(cmd_queue, stop_event):
@@ -145,10 +145,10 @@ def run_prompter(phrases, use_voice=True, min_words=5):
         
         try:
             mic = sr.Microphone()
-            print("🎤 Calibrando...")
+            print("🎤 Calibrating...")
             with mic as source:
                 recognizer.adjust_for_ambient_noise(source, duration=1.5)
-            print("✅ Pronto!")
+            print("✅ Ready!")
             time.sleep(0.5)
             
             voice_thread = threading.Thread(
@@ -158,13 +158,13 @@ def run_prompter(phrases, use_voice=True, min_words=5):
             )
             voice_thread.start()
         except Exception as e:
-            print(f"❌ Microfone: {e}")
+            print(f"❌ Microphone: {e}")
             use_voice = False
             time.sleep(1)
 
     try:
         while current < total:
-            display(phrases[current], current + 1, total, "🎤 Ouvindo..." if use_voice else "")
+            display(phrases[current], current + 1, total, "🎤 Listening..." if use_voice else "")
 
             while True:
                 try:
@@ -189,7 +189,7 @@ def run_prompter(phrases, use_voice=True, min_words=5):
     finally:
         stop_event.set()
         clear()
-        print("Fim! 🎬")
+        print("Done! 🎬")
 
 
 def main():
@@ -227,8 +227,8 @@ Controls:
         print("Error: No text found")
         sys.exit(1)
 
-    print(f"📜 {len(phrases)} parágrafos")
-    print("💡 Cmd + para aumentar fonte")
+    print(f"📜 {len(phrases)} paragraphs")
+    print("💡 Cmd + to increase font")
     print()
 
     run_prompter(phrases, use_voice=not args.manual, min_words=args.words)
