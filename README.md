@@ -6,6 +6,15 @@ No more scrolling text or foot pedals. Just speak naturally and the next phrase 
 
 ## Install
 
+```bash
+curl -sL https://raw.githubusercontent.com/danpalmieri/voice-prompter/master/install.sh | bash
+```
+
+Then restart your terminal or run `source ~/.zshrc`.
+
+<details>
+<summary>Manual install</summary>
+
 **macOS:**
 
 ```bash
@@ -19,6 +28,8 @@ pipx install git+https://github.com/danpalmieri/voice-prompter.git
 sudo apt install portaudio19-dev pipx
 pipx install git+https://github.com/danpalmieri/voice-prompter.git
 ```
+
+</details>
 
 ## Usage
 
