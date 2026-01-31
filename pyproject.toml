@@ -22,8 +22,8 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
-    "SpeechRecognition>=3.10.0",
-    "pyaudio>=0.2.23",
+    "SpeechRecognition>=3.8.0",
+    "pyaudio>=0.2.11",
 ]
 
 [project.scripts]
