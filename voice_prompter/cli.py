@@ -2,7 +2,7 @@
 """
 Voice Prompter - Voice-activated teleprompter CLI.
 
-Shows one phrase at a time, advances when it recognizes you speaking the phrase.
+Shows one phrase at a time, advances when it detects you speaking.
 """
 
 import sys
@@ -11,6 +11,7 @@ import re
 import argparse
 import threading
 import queue
+import time
 
 import speech_recognition as sr
 
@@ -35,32 +36,7 @@ def split_phrases(text, max_length=100):
     return result
 
 
-def normalize_text(text):
-    """Normalize text for comparison."""
-    text = re.sub(r'[^\w\s]', '', text.lower())
-    text = ' '.join(text.split())
-    return text
-
-
-def texts_match(spoken, expected, threshold=0.4):
-    """Check if spoken text matches expected phrase."""
-    spoken_norm = normalize_text(spoken)
-    expected_norm = normalize_text(expected)
-    
-    if not spoken_norm or not expected_norm:
-        return False
-    
-    expected_words = set(expected_norm.split())
-    spoken_words = set(spoken_norm.split())
-    
-    if not expected_words:
-        return False
-    
-    overlap = len(expected_words & spoken_words) / len(expected_words)
-    return overlap >= threshold
-
-
-def display(phrase, current, total):
+def display(phrase, current, total, status=""):
     """Display phrase BIG in terminal."""
     clear()
     try:
@@ -75,7 +51,7 @@ def display(phrase, current, total):
     print()
 
     # Word wrap
-    available_height = h - 6
+    available_height = h - 8
     words = phrase.split()
     max_width = min(w - 4, 60)
     
@@ -99,118 +75,106 @@ def display(phrase, current, total):
     for l in lines:
         print(f"\033[1m{l:^{w}}\033[0m")
 
-    # Footer
-    remaining_lines = h - padding_top - text_height - 4
+    # Status and footer
+    remaining_lines = h - padding_top - text_height - 6
     print("\n" * max(0, remaining_lines))
-    print(f"\033[90m{'🎤 Fale... | ESPAÇO=próx | B=volta | Q=sair':^{w}}\033[0m")
+    
+    if status:
+        print(f"\033[93m{status:^{w}}\033[0m")
+    else:
+        print()
+    print(f"\033[90m{'ESPAÇO=próx | B=volta | Q=sair':^{w}}\033[0m")
 
 
 def keyboard_listener(cmd_queue, stop_event):
     """Listen for keyboard input in a separate thread."""
     import tty
     import termios
+    import select
     
     old_settings = termios.tcgetattr(sys.stdin)
     try:
         tty.setcbreak(sys.stdin.fileno())
         while not stop_event.is_set():
-            import select
-            if select.select([sys.stdin], [], [], 0.1)[0]:
+            if select.select([sys.stdin], [], [], 0.05)[0]:
                 key = sys.stdin.read(1).lower()
                 cmd_queue.put(('key', key))
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 
-def voice_listener(cmd_queue, phrase_queue, stop_event, recognizer, mic, match_threshold):
+def voice_listener(cmd_queue, stop_event, recognizer, mic, min_words):
     """Listen for voice in a separate thread."""
     while not stop_event.is_set():
         try:
-            # Get current expected phrase
-            try:
-                expected = phrase_queue.get_nowait()
-            except queue.Empty:
-                expected = None
-            
-            if expected is None:
-                import time
-                time.sleep(0.1)
-                continue
-                
             with mic as source:
                 try:
-                    audio = recognizer.listen(source, timeout=1, phrase_time_limit=10)
+                    # Listen for speech
+                    audio = recognizer.listen(source, timeout=2, phrase_time_limit=12)
                     
+                    # Try to recognize
                     try:
                         spoken = recognizer.recognize_google(audio, language="pt-BR")
-                        if texts_match(spoken, expected, match_threshold):
+                        # Count words - filter out short sounds
+                        word_count = len(spoken.split())
+                        if word_count >= min_words:
                             cmd_queue.put(('voice', 'next'))
                     except sr.UnknownValueError:
+                        # Couldn't understand - probably noise
                         pass
-                    except sr.RequestError:
-                        cmd_queue.put(('voice', 'next'))
+                    except sr.RequestError as e:
+                        # API error - wait and retry
+                        time.sleep(1)
                         
                 except sr.WaitTimeoutError:
                     continue
+                    
         except Exception as e:
-            import time
-            time.sleep(0.1)
+            time.sleep(0.5)
 
 
-def run_prompter(phrases, use_voice=True, pause_threshold=1.5, match_threshold=0.4):
+def run_prompter(phrases, use_voice=True, min_words=3):
     """Run the prompter loop."""
     total = len(phrases)
     current = 0
 
     cmd_queue = queue.Queue()
-    phrase_queue = queue.Queue()
     stop_event = threading.Event()
 
-    # Start keyboard listener thread
+    # Start keyboard listener
     kb_thread = threading.Thread(target=keyboard_listener, args=(cmd_queue, stop_event), daemon=True)
     kb_thread.start()
 
-    # Setup voice if enabled
-    voice_thread = None
+    # Setup voice
     if use_voice:
         recognizer = sr.Recognizer()
-        recognizer.pause_threshold = pause_threshold
         recognizer.dynamic_energy_threshold = True
-        recognizer.energy_threshold = 400
+        recognizer.energy_threshold = 300
+        recognizer.pause_threshold = 0.8  # Faster response
         
         try:
             mic = sr.Microphone()
-            print("Calibrando microfone...")
+            print("🎤 Calibrando microfone...")
             with mic as source:
-                recognizer.adjust_for_ambient_noise(source, duration=2)
-            print(f"Calibrado! (threshold: {int(recognizer.energy_threshold)})")
+                recognizer.adjust_for_ambient_noise(source, duration=1.5)
+            print(f"✅ Pronto! (sensibilidade: {int(recognizer.energy_threshold)})")
+            time.sleep(0.5)
             
             voice_thread = threading.Thread(
                 target=voice_listener,
-                args=(cmd_queue, phrase_queue, stop_event, recognizer, mic, match_threshold),
+                args=(cmd_queue, stop_event, recognizer, mic, min_words),
                 daemon=True
             )
             voice_thread.start()
         except Exception as e:
-            print(f"Microfone não disponível: {e}")
-            print("Modo manual ativado.")
+            print(f"❌ Microfone não disponível: {e}")
+            print("Usando modo manual.")
             use_voice = False
-            import time
             time.sleep(1)
 
     try:
         while current < total:
-            display(phrases[current], current + 1, total)
-            
-            # Send current phrase to voice listener
-            if use_voice:
-                # Clear old phrases
-                while not phrase_queue.empty():
-                    try:
-                        phrase_queue.get_nowait()
-                    except queue.Empty:
-                        break
-                phrase_queue.put(phrases[current])
+            display(phrases[current], current + 1, total, "🎤 Ouvindo..." if use_voice else "")
 
             # Wait for command
             while True:
@@ -245,7 +209,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Controls:
-  🎤 Speak     Advances when you say the phrase
+  🎤 Speak     Advances after you speak (min 3 words)
   Space/Enter  Next phrase
   B            Previous phrase  
   Q            Quit
@@ -253,9 +217,8 @@ Controls:
     )
     parser.add_argument("script", help="Text file with your script")
     parser.add_argument("-m", "--manual", action="store_true", help="Manual mode (no voice)")
-    parser.add_argument("-p", "--pause", type=float, default=1.5, help="Pause threshold (default: 1.5)")
-    parser.add_argument("-t", "--threshold", type=float, default=0.4, help="Match threshold 0-1 (default: 0.4)")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 0.1.2")
+    parser.add_argument("-w", "--words", type=int, default=3, help="Min words to advance (default: 3)")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 0.1.3")
 
     args = parser.parse_args()
 
@@ -272,11 +235,11 @@ Controls:
         print("Error: No text found in file.")
         sys.exit(1)
 
-    print(f"📜 {len(phrases)} frases carregadas")
-    print("💡 Aumente a fonte: Cmd + (Mac) ou Ctrl + (Linux)")
+    print(f"📜 {len(phrases)} frases")
+    print("💡 Aumente a fonte: Cmd + (Mac)")
     print()
 
-    run_prompter(phrases, use_voice=not args.manual, pause_threshold=args.pause, match_threshold=args.threshold)
+    run_prompter(phrases, use_voice=not args.manual, min_words=args.words)
 
 
 if __name__ == "__main__":
